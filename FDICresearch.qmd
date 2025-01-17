@@ -1,0 +1,482 @@
+---
+title: "FDIC"
+format: pdf
+editor: visual
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(haven)
+library(data.table)
+
+#Loading the Bank Branch Presence in Texas for year 2010
+head(TX_2010_Data)
+```
+
+```{r}
+#Renaming the columns so they are easier to identify
+
+#colnames(TX_2010_Data)<-c("Cert","Institution","Reference","Physical Location","ServiceType","City","County","Deposits")
+
+#colnames(TX_2011_Data)<-c("Cert","Institution","Reference","Physical Location","ServiceType","City","County","Deposits")
+
+#colnames(TX_2012_Data)<-c("Cert","Institution","Reference","Physical Location","ServiceType","City","County","Deposits")
+
+#colnames(TX_2013_Data)<-c("Cert","Institution","Reference","Physical Location","ServiceType","City","County","Deposits")
+
+#colnames(TX_2014_Data)<-c("Cert","Institution","Reference","Physical Location","ServiceType","City","County","Deposits")
+
+#colnames(TX_2015_Data)<-c("Cert","Institution","Reference","Physical Location","ServiceType","City","County","Deposits")
+
+
+#TX_2010_Data$County <- paste0(TX_2010_Data$County, " County, Texas")
+#TX_2011_Data$County <- paste0(TX_2011_Data$County, " County, Texas")
+#TX_2012_Data$County <- paste0(TX_2012_Data$County, " County, Texas")
+#TX_2013_Data$County <- paste0(TX_2013_Data$County, " County, Texas")
+#TX_2014_Data$County <- paste0(TX_2014_Data$County, " County, Texas")
+#TX_2015_Data$County <- paste0(TX_2015_Data$County, " County, Texas")
+```
+
+```{r}
+
+# Find the number of unique values in the "cities" column
+num_unique_cities10 <- TX_2010_Data %>% 
+
+
+# Print the number of unique values
+print(num_unique_cities10)
+
+#2012
+num_unique_cities12 <- TX_2012_Data %>% 
+
+
+# Print the number of unique values
+print(num_unique_cities12)
+
+
+#2013
+num_unique_cities13 <- TX_2013_Data %>% 
+
+
+# Print the number of unique values
+print(num_unique_cities13)
+
+#2014
+num_unique_cities14 <- TX_2014_Data %>% 
+
+
+# Print the number of unique values
+print(num_unique_cities14)
+
+#2015
+num_unique_cities15 <- TX_2015_Data %>% 
+
+
+# Print the number of unique values
+print(num_unique_cities15)
+
+
+
+```
+
+## Fire Perimeters
+
+```{r}
+#Loading the Fire Perimeter History ALL YEARS
+
+head(InterAgencyFirePerimeterHistory_All_Years_View)
+```
+
+```{r}
+#Cleaning out the data
+
+
+#Renaming the columns
+colnames(InterAgencyFirePerimeterHistory_All_Years_View)
+colnames(InterAgencyFirePerimeterHistory_All_Years_View)<-c("ObjectID","Map Method","Last Update","Comments","GEOID","IRWINID","FireID","Year","Dispatch number","Name Recorded","Origin Jurisdiction","POO_RESP_I","Feature","Fire_Acres","Editor Name","Agency Record","Agency,","YearINTEGER","Fire Area","Fire Lenght")
+
+#Removing duplicates
+InterAgencyFirePerimeterHistory_All_Years_View<- InterAgencyFirePerimeterHistory_All_Years_View %>%
+  distinct()
+
+# Checking data types
+str(InterAgencyFirePerimeterHistory_All_Years_View)
+```
+
+```{r}
+fires2011_subset<-subset(InterAgencyFirePerimeterHistory_All_Years_View,Year==2011)
+head(fires2011_subset)
+```
+
+```{r}
+#Sorting data 
+
+#Largest Fire Acres subset
+increasingAcres_data_2011<-fires2011_subset[order(fires2011_subset$Fire_Acres,decreasing=TRUE),]
+
+head(increasingAcres_data_2011)
+```
+
+## Population Controls
+
+### Texas Population Size
+
+```{r}
+#Population controls
+head(TexasPop2010_2019)
+```
+
+### Poverty Estimates
+
+```{r}
+#Population controls
+head(PovertyEstimates)
+```
+
+```{r}
+#Renaming the columns
+colnames(PovertyEstimates)
+colnames(PovertyEstimates)<-c("Code","State","Area","Rural_Urban_Code03","Urban Code03","Rural_Urban13","Urban Code13","ALLPeople in Poverty21","90CILB","90CIUP")
+
+
+#I need to eliminate the first four rows 
+PovertyEstimates<-PovertyEstimates[-c(1:4),]
+head(PovertyEstimates)
+
+#Subset by only the state of TEXAS
+OnlyTexasPoverty<-subset(PovertyEstimates,State=="TX")
+head(OnlyTexasPoverty)
+
+```
+
+### Education Estimates
+
+```{r}
+#Education controls
+head(Education)
+```
+
+```{r}
+#Renaming the columns
+new_colnames<-as.character(Education[3,])
+
+Education<-Education %>%
+  setNames(new_colnames)
+
+head(Education)
+
+
+#NEED HELP
+ 
+
+```
+
+### Unemployment Estimates
+
+```{r}
+#Unemployment controls
+head(Civilian_Force)
+head(Unemployment_RATE)
+```
+
+```{r}
+TexasURate <-Unemployment_RATE%>%
+  filter(State=="Texas")
+head(TexasURate)
+
+
+TexasCivilianForce<-Civilian_Force%>%
+  filter(State=="Texas")
+head(TexasCivilianForce)
+
+TexasURate<-as.data.frame(TexasURate)
+TexasCivilianForce<-as.data.frame(TexasCivilianForce)
+```
+
+## FIRE DATA
+
+```{r}
+#Loading the fire data
+
+#Filtering to only have the wildfires from the state of Texas
+#Arranging to see largest wildfire based on gisacres
+
+Only_Texas_Sorted<-Historic_Geomac_Perimeters_Combined_2000_2018_7623284232327154878_1_%>%
+  subset(state=="TX") %>%
+  arrange(desc(gisacres))
+
+head(Only_Texas_Sorted)
+
+```
+
+## MERGING THE DATA SETS
+
+I managed to get all county names to say "county +county, texas"
+
+Issues: need to get county name in population data set to eliminate the space, right now it says ".COUNTYNAME" I need to eliminate the period.
+
+```{r}
+CountyANDpopulation_Merged<-merge(AllStates,TexasPop2010_2019, by="County")
+
+
+CountyANDdepositsMerged_10<-merge(AllStates,TX_2010_Data, by= "County")
+CountyANDdepositsMerged_11<-merge(AllStates,TX_2011_Data, by= "County")
+CountyANDdepositsMerged_12<-merge(AllStates,TX_2012_Data, by= "County")
+CountyANDdepositsMerged_13<-merge(AllStates,TX_2013_Data, by= "County")
+CountyANDdepositsMerged_14<-merge(AllStates,TX_2014_Data, by= "County")
+CountyANDdepositsMerged_15<-merge(AllStates,TX_2015_Data, by= "County")
+
+head(CountyANDpopulation_Merged)
+
+```
+
+```{r}
+
+#MERGING UNEMPLOYMENT AND POPULATION
+
+CivilianForceANDpopMERGED<-merge(TexasCivilianForce,CountyANDpopulation_Merged, by="County")
+head(CivilianForceANDpopMERGED)
+
+ALLUnemploymentANDallMERGED<-merge(CivilianForceANDpopMERGED,TexasURate, by="County")
+head(ALLUnemploymentANDallMERGED)
+```
+
+```{r}
+#2010
+print("counting number of observations in county")
+CountyBranches2010<-CountyANDdepositsMerged_10 %>%
+  count(County)
+
+colnames(CountyBranches2010)<-c("County","Branches 2010")
+head(CountyBranches2010)
+
+CountyDeposits2010<-aggregate(CountyANDdepositsMerged_10$Deposits, list(CountyANDdepositsMerged_10$County), FUN=sum)
+
+colnames(CountyDeposits2010)<-c("County","Deposits 2010")
+head(CountyDeposits2010)
+
+
+#2011
+print("counting number of observations in county")
+CountyBranches2011<-CountyANDdepositsMerged_11 %>%
+  count(County)
+
+colnames(CountyBranches2011)<-c("County","Branches 2011")
+head(CountyBranches2011)
+
+CountyDeposits2011<-aggregate(CountyANDdepositsMerged_11$Deposits, list(CountyANDdepositsMerged_11$County), FUN=sum)
+
+colnames(CountyDeposits2011)<-c("County","Deposits 2011")
+head(CountyDeposits2011)
+
+#2012
+print("counting number of observations in county")
+CountyBranches2012<-CountyANDdepositsMerged_12 %>%
+  count(County)
+
+colnames(CountyBranches2012)<-c("County","Branches 2012")
+head(CountyBranches2012)
+
+CountyDeposits2012<-aggregate(CountyANDdepositsMerged_12$Deposits, list(CountyANDdepositsMerged_12$County), FUN=sum)
+
+colnames(CountyDeposits2012)<-c("County","Deposits 2012")
+head(CountyDeposits2012)
+
+
+#2013
+print("counting number of observations in county")
+CountyBranches2013<-CountyANDdepositsMerged_13 %>%
+  count(County)
+
+colnames(CountyBranches2013)<-c("County","Branches 2013")
+head(CountyBranches2013)
+
+CountyDeposits2013<-aggregate(CountyANDdepositsMerged_13$Deposits, list(CountyANDdepositsMerged_13$County), FUN=sum)
+
+colnames(CountyDeposits2013)<-c("County","Deposits 2013")
+head(CountyDeposits2013)
+
+
+#2014
+print("counting number of observations in county")
+CountyBranches2014<-CountyANDdepositsMerged_14 %>%
+  count(County)
+
+colnames(CountyBranches2014)<-c("County","Branches 2014")
+head(CountyBranches2014)
+
+CountyDeposits2014<-aggregate(CountyANDdepositsMerged_14$Deposits, list(CountyANDdepositsMerged_14$County), FUN=sum)
+
+colnames(CountyDeposits2014)<-c("County","Deposits 2014")
+head(CountyDeposits2014)
+
+
+#2015
+print("counting number of observations in county")
+CountyBranches2015<-CountyANDdepositsMerged_15 %>%
+  count(County)
+
+colnames(CountyBranches2015)<-c("County","Branches 2015")
+head(CountyBranches2015)
+
+CountyDeposits2015<-aggregate(CountyANDdepositsMerged_15$Deposits, list(CountyANDdepositsMerged_15$County), FUN=sum)
+
+colnames(CountyDeposits2015)<-c("County","Deposits 2015")
+head(CountyDeposits2015)
+```
+
+```{r}
+County_Branch_DepositMERGED1<-merge(CountyDeposits2010,CountyDeposits2011,by="County")
+
+County_Branch_DepositMERGED2<-merge(County_Branch_DepositMERGED1,CountyDeposits2012,by="County")
+
+County_Branch_DepositMERGED3<-merge(County_Branch_DepositMERGED2,CountyDeposits2013,by="County")
+
+County_Branch_DepositMERGED4<-merge(County_Branch_DepositMERGED3,CountyDeposits2014,by="County")
+
+County_Branch_DepositMERGED5<-merge(County_Branch_DepositMERGED4,CountyDeposits2015,by="County")
+
+```
+
+```{r}
+County_BranchMERGED1<-merge(CountyBranches2010,CountyBranches2011,by="County")
+
+County_BranchMERGED2<-merge(County_BranchMERGED1,CountyBranches2012,by="County")
+
+County_BranchMERGED3<-merge(County_BranchMERGED2,CountyBranches2013,by="County")
+
+County_BranchMERGED4<-merge(County_BranchMERGED3,CountyBranches2014,by="County")
+
+County_BranchMERGED5<-merge(County_BranchMERGED4,CountyBranches2015,by="County")
+
+
+```
+
+```{r}
+longPopulation<-reshape(CountyANDpopulation_Merged,
+              varying=c("2010","2011","2012","2013","2014","2015"),
+              v.names="Population",
+              timevar="Year",
+              times=c("2010","2011","2012","2013","2014","2015"),
+              idvar = "ID",
+              direction="long")
+
+longBranches<-reshape(County_BranchMERGED5,
+              varying=c("Branches 2010","Branches 2011","Branches 2012","Branches 2013","Branches 2014","Branches 2015"),
+              v.names="Branches",
+              timevar="Year",
+              times=c("2010","2011","2012","2013","2014","2015"),
+              idvar = "ID",
+              direction="long")
+
+
+longDeposits<-reshape(County_Branch_DepositMERGED5,
+              varying=c("Deposits 2010","Deposits 2011","Deposits 2012","Deposits 2013","Deposits 2014","Deposits 2015"),
+              v.names="Deposits",
+              timevar="Year",
+              times=c("2010","2011","2012","2013","2014","2015"),
+              idvar = "ID",
+              direction="long")
+
+longUrate<-reshape(TexasURate,
+              varying=c("U_Rate_2010","U_Rate_2011","U_Rate_2012","U_Rate_2013","U_Rate_2014","U_Rate_2015"),
+              v.names="U_Rate",
+              timevar="Year",
+              times=c("2010","2011","2012","2013","2014","2015"),
+              idvar = "ID",
+              direction="long")
+
+longCivilian<-reshape(TexasCivilianForce,
+              varying=c("CivilianForce_2010","CivilianForce_2011","CivilianForce_2012","CivilianForce_2013","CivilianForce_2014","CivilianForce_2015"),
+              v.names="CivilianForce",
+              timevar="Year",
+              times=c("2010","2011","2012","2013","2014","2015"),
+              idvar = "ID",
+              direction="long")
+
+
+```
+
+```{r}
+MERGED1<-merge(longPopulation,longBranches,by.x=c('County','Year'),by.y=c('County','Year'))
+
+
+MERGED2<-merge(MERGED1,longDeposits,by.x=c('County','Year'),by.y=c('County','Year'))
+
+#Deleting some columns
+MERGED2 <- subset(MERGED2, select = -c(ID.x,ID.y))
+
+
+```
+
+```{r}
+MERGED3<-merge(MERGED2,longCivilian,by.x=c('County','Year'),by.y=c('County','Year'))
+MERGED4<-merge(MERGED3,longUrate,by.x=c('County','Year'),by.y=c('County','Year'))
+
+MERGED4 <- subset(MERGED4, select = -c(ID.x,ID.y,State.x,State.y,ID))
+
+```
+
+## DIFF-DIFF MODEL
+
+My dummy variable is the wildfire present in 2011 or not
+
+Wildfire = 1
+
+no Wildfire = 0
+
+```{r}
+#Dummy for time
+MERGED4$Year2=ifelse(MERGED4$Year>=2011,1,0)
+
+```
+
+```{r}
+dataDID=MERGED4$`Wildfire`* MERGED4$Year2
+```
+
+```{r}
+BranchesReg1<-lm(Branches~Wildfire*Year+Population+U_Rate+Ratio,data=MERGED4)
+
+summary(BranchesReg1)
+```
+
+```{r}
+DepositsReg1<-lm(Deposits~Wildfire*Year+Population+U_Rate+Ratio,data=MERGED4)
+
+summary(DepositsReg1)
+```
+
+```{r}
+FixedDeposits<-lm(Deposits~Wildfire*Year+Population+U_Rate+Ratio+factor(County),data=MERGED4)
+
+summary(FixedDeposits)
+```
+
+```{r}
+FixedBranches<-lm(Branches~Wildfire*Year+Population+U_Rate+Ratio+factor(County),data=MERGED4)
+
+summary(FixedBranches)
+```
+
+```{r}
+shortMERGED4<-MERGED4[-which(MERGED4$Year > 2011),]
+```
+
+```{r}
+ShortDepositsReg1<-lm(Deposits~Wildfire*Year+Population+U_Rate+Ratio,data=shortMERGED4)
+
+summary(ShortDepositsReg1)
+```
+
+```{r}
+shortBranchReg1<-lm(Branches~Wildfire*Year+Population+U_Rate+CivilianForce,data=shortMERGED4)
+
+summary(shortBranchReg1)
+```
+
+```{r}
+MERGED4$Ratio<-MERGED4$CivilianForce/MERGED4$Population
+```
