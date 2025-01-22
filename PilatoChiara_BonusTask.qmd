@@ -1,0 +1,365 @@
+---
+title: "Bonus Task"
+format: pdf
+editor: visual
+---
+
+## Stanford GSB Coding Task
+
+### Research Fellowship with Dr. Juan Carlos Suárez Serrato & Dr. Kevin Roberts
+
+### Chiara Luna Pilato Moncada
+
+```{r}
+#Setting up R studios useful libraries
+
+library(tidyverse)
+library(readr)
+library(knitr)
+library(scales)
+library(RColorBrewer)
+library(haven)
+library(data.table)
+library(fixest)
+library(GGally)
+library(dotwhisker)
+
+```
+
+## Descriptive Analysis:
+
+1.  **Create a table that represents the mean and standard deviation of employment; and mean earnings in the third quarter of 2001 for all workers and also separated by gender.**
+
+```{r}
+#Filtering the original data set first to be only Q3, 2001 and group by gender
+qwi_Emp_Filtered <-qwi %>%
+  filter(year==2001, quarter==3)
+
+#Now I calculate the summary statistics for employment and earnings grouped by gender, accounting for the NA values in the data
+summary_Stats<-qwi_Emp_Filtered %>%
+  group_by(gender) %>%
+  summarise(mean_Emp = mean(emps, na.rm =TRUE),
+            sd_Emp = sd(emps, na.rm=TRUE),
+            mean_Earns = mean(earns,na.rm=TRUE),
+            sd_Earns = sd(earns,na.rm=TRUE))
+
+print(summary_Stats)
+
+```
+
+2.  **The previous table gives summary statistics for state-industry level outcomes.**
+
+    **Now we want to examine aggregate trends of employment over the 1997-2011 sample period. So: aggregate employment data quarterly, separated by gender and create a time series plot to visualize the changes in employment over 1997-2011.**
+
+```{r}
+#Total employment 
+Employment <-qwi%>%
+  group_by(gender,year, quarter)%>%
+  summarise(total_Emp_AcrossIndustry =sum(emps, na.rm = TRUE)) %>%
+  mutate(YearQ = (paste(year, "Q",quarter)))
+
+#Making the time series plot 
+ggplot(Employment, aes(x=YearQ, y=total_Emp_AcrossIndustry, color = as.factor(gender), group=gender)) + 
+  geom_point() +
+  geom_line() +  
+  labs(
+    title = "Change in Aggregated Total Employment from 1997-2011",
+    color = "Gender Breakdown",
+    x = "Years",
+    y = "Total Employment") +
+  theme_light() +
+  scale_color_manual(values = c("red","dark green","navy"), 
+                     labels = c("Total", "Men", "Women")) +
+  scale_x_discrete(breaks=c("1997 Q 1", "2000 Q 4", "2004 Q 3","2008 Q 1", "2011 Q 3")) 
+ 
+```
+
+## Regression Setup:
+
+1.  **Take the natural log of the employment variable and create a new variable to be used as our outcome variable in the subsequent regression analyses**
+
+```{r}
+#Adding the new log of employment variable into our previous QWI data.
+qwi <- qwi %>% 
+  mutate(log_Employment=log(emps))
+
+#Choosing to clean out the data and removing the -Inf values 
+#after the log Emp transformation
+Clean_qwi <- qwi %>%
+  filter(log_Employment != -Inf)
+  
+```
+
+2.  **Merge the QWI data with the bonus depreciation data using the NAICS codes in each data set. Then produce a histogram of the distribution of Z_0 values to observe how bonus depreciation values vary across industries and create an indicator for industries where z_0 \< 0.875. This indicator will be used to define an industry as "treated"**
+
+```{r}
+#Merging based on the NAICS codes
+Merged_qwi_bonus<-left_join(Clean_qwi,bonus_z_4, by = "naics")
+
+#Creating the zero-one indicator variable for z0 < 0.875
+Merged_qwi_bonus$Treatment_Presence<-as.numeric(Merged_qwi_bonus$z0 < 0.875)
+
+
+#Producing the Histogram of z0 distribution across industries
+ggplot(Merged_qwi_bonus, aes(x=z0)) +
+  geom_histogram(color="black",
+                 fill = "light blue") +
+  labs(
+    title = "z0 Values Distribution",
+    x = "z0 Values",
+    y = "Count of z0") +
+geom_vline(xintercept = 0.875,
+              linetype="dashed",
+              color="grey") +
+geom_rug(aes(x=z0),
+         alpha=0.01)
+
+theme_light()
+
+```
+
+### Event Study Regression Analysis
+
+1.  **Estimate the model with all specifications**
+
+A\) Include State_Industry fixed effects and State_Time Fixed Effects
+
+B\) Apply Weights Based on the 2001 Q3 Total Employment Value
+
+C\) Cluster errors at State-Industry Level
+
+```{r}
+#Total Employment
+
+#Creating a consistent time variable.
+#Creating standard unit fixed effect, state-industry identifier.
+#Creating the modified time fixed effect, state-time indentifier.
+
+Merged_qwi_bonus <- Merged_qwi_bonus %>%
+  group_by(fipstate,naics) %>%
+  mutate(State_IndustryID = cur_group_id()) %>%
+  ungroup() %>%
+  
+  group_by(year,quarter) %>%
+  mutate(Time_VariableID = cur_group_id()) %>%
+  ungroup() %>%
+
+  group_by(fipstate, year, quarter) %>%
+  mutate(State_TimeID = cur_group_id()) %>%
+  ungroup() 
+
+##This adjusted time variable will say how many quarters away we are from the policy implementation 2001 Q3.
+Merged_qwi_bonus <- Merged_qwi_bonus %>%
+  mutate(Adjusted_Time = (((year - 2001) * 4) + (quarter-3)))
+
+
+#Filtering for only total employment, not separated by gender in this question
+TotalMerged_qwi_bonus <- Merged_qwi_bonus %>%
+  filter(gender == 0)
+
+# b) Weight the observations using 2001Q3 
+Weights_2001Q3 <- TotalMerged_qwi_bonus %>%
+  filter(year==2001, quarter==3) %>%
+  select(State_IndustryID, emps) %>%
+  rename(Weight=emps)
+  
+TotalMerged_qwi_bonus <- TotalMerged_qwi_bonus %>%
+  left_join(Weights_2001Q3, by ="State_IndustryID")
+```
+
+```{r}
+#Creating the interaction terms for each quarter in reference to 2001 Q3
+#18 quarters from 1997q1 to 2001q3 and 41 quarters from 2001q3 to 2011q4
+#Omitting 2001q3
+Relative_Time <- c(-18:-1, 1:41)
+
+#Interaction terms creation For loop 
+for (t in Relative_Time) {
+  time_var <- paste0("Q_", ifelse(t < 0, "minus", "plus"), abs(t))
+  interaction_var <- paste0(time_var, "_INTERACTION")
+  TotalMerged_qwi_bonus <- TotalMerged_qwi_bonus %>%
+    mutate(
+      !!time_var := ifelse(Adjusted_Time == t, 1, 0),
+      !!interaction_var := .data[[time_var]] * Treatment_Presence)}
+
+#Using formula to later plug in regression model
+Formula <- TotalMerged_qwi_bonus %>%
+  select(ends_with("_INTERACTION")) %>%
+  names() %>%
+  paste(collapse = " + ")
+
+```
+
+```{r}
+#Running the model
+
+TotalModel <- feols(
+  as.formula(paste("log_Employment ~ ", Formula, "| State_IndustryID + State_TimeID")),
+  data = TotalMerged_qwi_bonus,
+  weights = ~Weight,
+  cluster = ~State_IndustryID)
+
+summary(TotalModel)
+```
+
+2.  **Plot the estimated Beta_y coefficients with 95% confidence intervals to illustrate the employment impact over time**
+
+```{r}
+#Graphing the coefficients with their CI
+dwplot(TotalModel) +coord_flip()  + 
+  labs(
+    title = "B_y Coefficients with 95% Confidence Intervals",
+    x = "Estimated Coefficient",
+    y = "Relative Time") +
+  scale_y_discrete(
+    labels = function(labels) {
+      time1 <- sapply(labels, function(label) {
+        time_val <- as.numeric(gsub(".*_(minus|plus)(\\d+)_INTERACTION", "\\2", label)) * ifelse(grepl("minus", label), -1, 1)
+      paste0(ifelse(time_val > 0, "+", ""), time_val) })}) +
+  theme_light() +
+  theme(
+    axis.text.x = element_text(size = 5, angle = 30),
+      legend.position = "none")
+ 
+#So its easier to read, I coded so that Qminus18_INTERACTION would appear as just -18 in the graph, and the same for all the relative times labels.
+```
+
+3.  **What do the coefficient estimates for periods before the policy implementation tell you about the validity of the research design?**
+
+I can assess the coefficient estimates directly from the regression summary table; or by looking at the values of the estimates and their confidence intervals in the graph I just made.
+
+There is no clear preexisting trend in the coefficients before the implementation of the policy in 2001 Q3. This is one of the baseline conditions to validate the model and move forward with the event study research design. If there was already a trend within the observations with treatment and those with no treatment (no bonus policy) before the policy was even implemented; moving forward with this study design would not be correct as there would be no way to differentiate or extrapolate the effect of the policy itself.
+
+4.  **Interpret the estimate of Beta_2011, the event study coefficient association with the effect of Bonus on log employment in 2011.**
+
+```{r}
+#The year 2011 is represented as Q_plus38, and it lands on 2011q1 to be specific.
+print(paste("The estimate of the Beta_2011 is:", (TotalModel$coefficients["Q_plus38_INTERACTION"])))
+```
+
+Given the regression output, the Beta_2011 estimate is 0.102329.
+
+This represents the effect of the bonus depreciation policy on log employment in 2011.
+
+Because this is a log-linear model, we know the interpretation is that a one-unit change in our Bonus Indicator (as in from 0 to 1, meaning the Policy is present) leads to a 10.23% increase in log Employment, holding all else constant.Comparing Effects Across Genders
+
+1.  **Estimate the model for men and women**
+
+```{r}
+#Men model
+
+MALE_Merged_qwi_bonus <-Merged_qwi_bonus %>%
+  filter(gender == 1)
+
+# b) Weight the observations using the 2001 Q3 value for employment in each state-industry obsersation for men
+MWeights_2001Q3 <- MALE_Merged_qwi_bonus %>%
+  filter(year==2001, quarter==3) %>%
+  select(State_IndustryID, emps) %>%
+  rename(Weight=emps)
+  
+MALE_Merged_qwi_bonus <- MALE_Merged_qwi_bonus %>%
+  left_join(MWeights_2001Q3, by ="State_IndustryID")
+
+
+#Creating the interaction terms for each quarter in reference to 2001 Q3
+#18 quarters from 1997q1 to 2001q3 and 41 quarters from 2001q3 to 2011q4
+Relative_Time <- c(-18:-1, 1:41)
+
+#Interaction terms creation For loop 
+for (t in Relative_Time) {
+  time_var1 <- paste0("Q_", ifelse(t < 0, "minus", "plus"), abs(t))
+  interaction_var1 <- paste0(time_var1, "_INTERACTION")
+  MALE_Merged_qwi_bonus <- MALE_Merged_qwi_bonus %>%
+    mutate(
+      !!time_var1 := ifelse(Adjusted_Time == t, 1, 0),
+      !!interaction_var1 := .data[[time_var1]] * Treatment_Presence)}
+
+
+#Using formula to later plug in regression model
+Formula1 <- MALE_Merged_qwi_bonus %>%
+  select(ends_with("_INTERACTION")) %>%
+  names() %>%
+  paste(collapse = " + ")
+
+#Run the model
+MenModel <- feols(
+  as.formula(paste("log_Employment ~ ", Formula, "| State_IndustryID + State_TimeID")),
+  data = MALE_Merged_qwi_bonus,
+  weights = ~Weight,
+  cluster = ~State_IndustryID)
+
+summary(MenModel)
+
+```
+
+```{r}
+#Woman model
+
+WOMAN_Merged_qwi_bonus <-Merged_qwi_bonus %>%
+  filter(gender == 2)
+
+# b) Weight the observations using the 2001 Q3 value for employment in each state-industry obsersation for men
+WWeights_2001Q3 <- WOMAN_Merged_qwi_bonus %>%
+  filter(year==2001, quarter==3) %>%
+  select(State_IndustryID, emps) %>%
+  rename(Weight=emps)
+  
+WOMAN_Merged_qwi_bonus <- WOMAN_Merged_qwi_bonus %>%
+  left_join(WWeights_2001Q3, by ="State_IndustryID")
+
+
+#Creating the interaction terms for each quarter in reference to 2001 Q3
+#18 quarters from 1997q1 to 2001q3 and 41 quarters from 2001q3 to 2011q4
+Relative_Time <- c(-18:-1, 1:41)
+
+#Interaction terms creation For loop 
+for (t in Relative_Time) {
+  time_var2 <- paste0("Q_", ifelse(t < 0, "minus", "plus"), abs(t))
+  interaction_var2 <- paste0(time_var2, "_INTERACTION")
+  WOMAN_Merged_qwi_bonus <- WOMAN_Merged_qwi_bonus %>%
+    mutate(
+      !!time_var2 := ifelse(Adjusted_Time == t, 1, 0),
+      !!interaction_var2 := .data[[time_var2]] * Treatment_Presence)}
+
+
+#Using formula to later plug in regression model
+Formula2 <- WOMAN_Merged_qwi_bonus %>%
+  select(ends_with("_INTERACTION")) %>%
+  names() %>%
+  paste(collapse = " + ")
+
+#Run the model
+WomanModel <- feols(
+  as.formula(paste("log_Employment ~ ", Formula, "| State_IndustryID + State_TimeID")),
+  data = WOMAN_Merged_qwi_bonus,
+  weights = ~Weight,
+  cluster = ~State_IndustryID)
+
+summary(WomanModel)
+```
+
+2.  **Create a figure that plots both sets of Beta_y coefficients for men and women on the same graph**
+
+```{r}
+dwplot(list(MenModel, WomanModel))  + coord_flip() +
+  labs(
+    title = "B_y Coefficients in Men and Women Models",
+    x = "Estimated Coefficients",
+    y = "Relative Time",
+    color = "Gender Breakdown") +
+  scale_color_manual(values = c("navy","dark green"), 
+                     labels = c("Women", "Men")) +
+  scale_y_discrete(labels = function(labels) {
+    sapply(labels, function(label) {
+      time_val <- as.numeric(gsub(".*_(minus|plus)(\\d+)_INTERACTION", "\\2", label)) * ifelse(grepl("minus", label), -1, 1)
+      paste0(ifelse(time_val > 0, "+", ""), time_val) }) }) + 
+  theme(axis.text.x = element_text(size=4.5, angle = -40)) 
+
+    
+```
+
+3.  **A natural question arising is if the effects of Bonus on employment differ across men and women. Solely based on the above analysis what can you conclude about the relative effect of Bonus depreciation on the employment of men and women? What additional information would I need to say more?**
+
+Solely based on the previous analysis, I can conclude that the policy implementation of bonus depreciation has a larger relative effect on the log employment of women than it does on the log employment of men. This is always the case for all quarters post implementation, because in this post implementation period, the coefficient estimates are always larger for women than they are for men. The coefficient estimates for women reach values of up to 0.2 (meaning that holding all else constant, for a treatment presence unit increase of 0 to 1, there's about a 20% increase in log employment for women, holding all else constant). On the other hand, the coefficient estimates for men only reach up to around up a 0.5 max (meaning that holding all else constant, for a treatment presence unit increase from 0 to 1, there's about a 5% increase in log employment for men). Both relative effects of the Bonus are still positive; but the effect on women is larger than the effect that the Bonus implementation has on men. I can also see a difference within the two positive upward sloping trends: for women, there's a sharper increase in the coefficient estimates over time compared to the coefficient estimates of men, which stay more constant in the post implementation period in the following quarters. This means that as time goes on after the policy has been implemented, the relative percentage increases in log employment of men are more stable and slower growing than they are for women. 
+
+When it comes to obtaining additional information or control variables to improve or expand the analysis of the model; the more information is always better. Including more control variables that account for differences in education, socio-political status, culture, etc… between men and women would allow us to analyze differences in levels of employment for each gender that are unrelated to the policy implementation. To say more about the results of this analysis I would also need to know more about and implement fixed effects that account for genders. We accounted for inherent differences in the state-industry fixed effects and also accounted for the state-time modified fixed effects; but we are ignoring the truth of our society, which is that men and women face different day to day situations unrelated to the policy implementation that affect their employment levels. We could have also done additional analysis to find the demographic/gender composition of the specific industries represented by the NAICS codes. This would let us analyze if the policy affects industries dominated by men the same way that it affects industries dominated by women, or industries where the workforce is even between men and women. Overall, more information would allow us to either improve our model or help us answer different questions with our model.
